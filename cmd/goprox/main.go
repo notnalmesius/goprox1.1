@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	secheaders "prodjects/goprox/checks/secHeaders"
 
 	"github.com/elazarl/goproxy"
 )
@@ -25,10 +26,24 @@ func main() {
 
 	// Check Security Headers
 	proxy.OnResponse().DoFunc(
-		func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-			
-		}
-	)
+		func(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
+			if secheaders.CheckCSP(resp, ctx) &&
+				secheaders.CheckCORS(resp, ctx) &&
+				// secheaders.CheckXCT(resp, ctx) &&
+				// secheaders.CheckXFO(resp, ctx) &&
+				secheaders.CheckHSTS(resp, ctx) {
+				return resp
+			}
+
+			newResp := goproxy.NewResponse(
+				ctx.Req,
+				goproxy.ContentTypeText,
+				http.StatusForbidden,
+				"Connection refused: unsafe site",
+			)
+
+			return newResp
+		})
 
 	log.Fatal(http.ListenAndServe("localhost:8080", proxy))
 

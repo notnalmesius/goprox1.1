@@ -23,17 +23,11 @@ func main() {
 	proxy.Verbose = true
 	proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
 
-	// Задача 1 (существующая) + Задача 2 (новая) — на уровне запроса
 	proxy.OnRequest().DoFunc(
 		func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-			// Существующая проверка: только HTTPS
-			if r.URL.Scheme != "https" {
-				resp := goproxy.NewResponse(r, goproxy.ContentTypeText, http.StatusForbidden,
-					"Resource doesn't use HTTPS")
-				return r, resp
-			}
 
-			// Задача 2: проверка общедоступных файлов — запускаем один раз на хост
+			// Задача 2: сканирование публичных файлов — выполняется ДО любых блокировок,
+			// один раз на каждый уникальный хост.
 			host := r.URL.Scheme + "://" + r.URL.Host
 			scannedMu.Lock()
 			alreadyScanned := scannedHosts[host]
@@ -43,8 +37,14 @@ func main() {
 			scannedMu.Unlock()
 
 			if !alreadyScanned {
-				// Запускаем в горутине, чтобы не задерживать браузер
-				go publicfiles.CheckPublicFiles(host)
+				publicfiles.CheckPublicFiles(host)
+			}
+
+			// Задача 1 (существующая): блокируем не-HTTPS сайты — после сканирования
+			if r.URL.Scheme != "https" {
+				resp := goproxy.NewResponse(r, goproxy.ContentTypeText, http.StatusForbidden,
+					"Resource doesn't use HTTPS")
+				return r, resp
 			}
 
 			return r, nil

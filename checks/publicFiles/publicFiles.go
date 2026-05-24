@@ -5,57 +5,46 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	rep "prodjects/goprox/checks/report"
 )
 
-// target описывает один проверяемый путь.
 type target struct {
 	path    string
-	risk    string // "CRITICAL", "HIGH", "MEDIUM", "LOW"
+	risk    string
 	comment string
 }
 
-// publicFileTargets — список путей, наличие которых в открытом доступе
-// представляет угрозу безопасности.
 var publicFileTargets = []target{
-	// Конфигурационные файлы
-	{"/.env", "CRITICAL", "Файл переменных окружения: пароли БД, API-ключи, секретные токены"},
-	{"/.env.local", "CRITICAL", "Локальный файл конфигурации с секретными данными окружения"},
-	{"/config.php", "CRITICAL", "Файл конфигурации PHP: параметры подключения к БД"},
-	{"/wp-config.php", "CRITICAL", "Конфигурация WordPress: данные доступа к БД"},
-	{"/configuration.php", "CRITICAL", "Конфигурация Joomla: параметры БД и секретные ключи"},
-	{"/settings.py", "CRITICAL", "Настройки Django: SECRET_KEY, параметры БД"},
-	// Системы контроля версий
-	{"/.git/config", "CRITICAL", "Git-репозиторий доступен: возможна утечка исходного кода"},
-	{"/.git/HEAD", "CRITICAL", "Директория .git открыта: весь исходный код может быть скачан"},
-	{"/.svn/entries", "CRITICAL", "SVN-репозиторий доступен: возможна утечка исходного кода"},
-	// Резервные копии
-	{"/backup.zip", "CRITICAL", "Архив резервной копии сайта доступен без авторизации"},
-	{"/backup.sql", "CRITICAL", "Дамп базы данных доступен без авторизации"},
-	{"/db.sql", "CRITICAL", "Файл дампа БД доступен без ограничений"},
-	{"/backup.tar.gz", "CRITICAL", "Архив резервной копии доступен без авторизации"},
-	// Административные панели
-	{"/phpmyadmin", "HIGH", "phpMyAdmin доступен публично: прямой интерфейс управления БД"},
-	{"/phpmyadmin/index.php", "HIGH", "phpMyAdmin доступен без ограничений"},
-	{"/admin", "MEDIUM", "Административная панель обнаружена и доступна"},
-	{"/wp-admin", "MEDIUM", "Панель администратора WordPress доступна"},
-	// Служебные файлы
-	{"/.htaccess", "MEDIUM", "Файл .htaccess раскрывает правила маршрутизации и конфигурацию Apache"},
-	{"/server-status", "MEDIUM", "Apache mod_status раскрывает IP-адреса и текущие запросы к серверу"},
-	{"/server-info", "MEDIUM", "Страница server-info раскрывает подробную конфигурацию веб-сервера"},
-	{"/error.log", "MEDIUM", "Журнал ошибок раскрывает трассировки стека и пути к файлам"},
-	{"/access.log", "MEDIUM", "Журнал доступа раскрывает все HTTP-запросы и IP-адреса посетителей"},
-	// Зависимости
-	{"/package.json", "LOW", "Раскрывает зависимости Node.js: злоумышленник найдёт уязвимые версии"},
-	{"/composer.json", "LOW", "Раскрывает зависимости PHP-пакетов и их версии"},
-	{"/requirements.txt", "LOW", "Раскрывает зависимости Python и их версии"},
-	// Служебные
-	{"/robots.txt", "LOW", "Может раскрывать скрытые разделы через директивы Disallow"},
-	{"/sitemap.xml", "LOW", "Раскрывает полную структуру и все URL сайта"},
+	{"/.env", "critical", "Закройте публичный доступ к файлу .env — он содержит пароли БД и API-ключи. Добавьте правило запрета в конфигурацию веб-сервера."},
+	{"/.env.local", "critical", "Закройте доступ к .env.local — локальный файл конфигурации не должен быть доступен извне."},
+	{"/config.php", "critical", "Закройте доступ к config.php — файл содержит параметры подключения к базе данных."},
+	{"/wp-config.php", "critical", "Закройте доступ к wp-config.php через конфигурацию Nginx/Apache. Это критически важный файл WordPress."},
+	{"/configuration.php", "critical", "Закройте доступ к configuration.php — конфигурационный файл Joomla с секретными данными."},
+	{"/settings.py", "critical", "Закройте доступ к settings.py — файл настроек Django содержит SECRET_KEY и параметры БД."},
+	{"/.git/config", "critical", "Закройте директорию .git через конфигурацию сервера — доступ к ней позволяет скачать весь исходный код."},
+	{"/.git/HEAD", "critical", "Директория .git открыта публично. Добавьте запрет доступа к /.git/ в настройках веб-сервера."},
+	{"/.svn/entries", "critical", "Закройте директорию .svn — через неё можно восстановить исходный код из SVN-репозитория."},
+	{"/backup.zip", "critical", "Удалите архив резервной копии с веб-сервера или переместите его за пределы публичной директории."},
+	{"/backup.sql", "critical", "Удалите дамп базы данных с веб-сервера — он содержит все данные пользователей."},
+	{"/db.sql", "critical", "Удалите файл дампа БД с веб-сервера или ограничьте доступ к нему."},
+	{"/backup.tar.gz", "critical", "Удалите архив резервной копии из публичной директории веб-сервера."},
+	{"/phpmyadmin", "high", "Ограничьте доступ к phpMyAdmin по IP-адресу или перенесите его на нестандартный URL."},
+	{"/phpmyadmin/index.php", "high", "phpMyAdmin доступен без ограничений. Настройте доступ только с доверенных IP-адресов."},
+	{"/admin", "medium", "Убедитесь что административная панель защищена надёжным паролем и двухфакторной аутентификацией."},
+	{"/wp-admin", "medium", "Ограничьте доступ к /wp-admin по IP или установите плагин защиты входа с поддержкой 2FA."},
+	{"/.htaccess", "medium", "Настройте сервер так чтобы файл .htaccess не отдавался клиентам (deny from all)."},
+	{"/server-status", "medium", "Отключите mod_status Apache или ограничьте доступ к /server-status по IP."},
+	{"/server-info", "medium", "Отключите mod_info Apache или ограничьте доступ к /server-info по IP."},
+	{"/error.log", "medium", "Закройте публичный доступ к журналу ошибок — он раскрывает внутреннюю структуру сайта."},
+	{"/access.log", "medium", "Закройте публичный доступ к журналу доступа — он содержит IP-адреса посетителей."},
+	{"/package.json", "low", "Рассмотрите ограничение доступа к package.json — он раскрывает версии зависимостей с возможными уязвимостями."},
+	{"/composer.json", "low", "Рассмотрите ограничение доступа к composer.json — он раскрывает версии PHP-пакетов."},
+	{"/requirements.txt", "low", "Рассмотрите ограничение доступа к requirements.txt — он раскрывает Python-зависимости."},
+	{"/robots.txt", "low", "Проверьте robots.txt: директивы Disallow не должны указывать на чувствительные разделы сайта."},
+	{"/sitemap.xml", "low", "Sitemap.xml раскрывает полную структуру сайта — убедитесь что все перечисленные URL предназначены для публичного доступа."},
 }
 
-// httpClient — общий клиент с таймаутом для всех проверок.
-// Не следует редиректам: сервер, перенаправляющий 404 на главную,
-// вернёт 301/302, а не 200 — это исключает ложные срабатывания.
 var httpClient = &http.Client{
 	Timeout: 10 * time.Second,
 	CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -63,11 +52,12 @@ var httpClient = &http.Client{
 	},
 }
 
-// CheckPublicFiles выполняет проверку общедоступных файлов для указанного хоста.
-// Вызывается один раз при первом обращении браузера к новому хосту.
-// baseURL — схема + хост, например "https://example.com".
+// CheckPublicFiles проверяет наличие опасных общедоступных файлов
+// и передаёт найденные аномалии в модуль report.
 func CheckPublicFiles(baseURL string) {
 	baseURL = strings.TrimRight(baseURL, "/")
+	r := rep.GetOrCreate(baseURL)
+
 	log.Printf("[PublicFiles] Starting scan: %s (%d paths)", baseURL, len(publicFileTargets))
 
 	found := 0
@@ -75,12 +65,12 @@ func CheckPublicFiles(baseURL string) {
 		fullURL := baseURL + t.path
 		status, err := probeURL(fullURL)
 		if err != nil {
-			// Таймаут или сетевая ошибка — пропускаем
 			continue
 		}
 		if status == http.StatusOK {
 			found++
-			log.Printf("[PublicFiles] [%s] %s — %s (HTTP 200)", t.risk, t.path, t.comment)
+			log.Printf("[PublicFiles] [%s] %s (HTTP 200)", strings.ToUpper(t.risk), t.path)
+			r.AddPublicFileFinding(t.path, t.risk, t.comment)
 		}
 	}
 
@@ -89,9 +79,11 @@ func CheckPublicFiles(baseURL string) {
 	} else {
 		log.Printf("[PublicFiles] Scan complete: %d exposed file(s) found on %s", found, baseURL)
 	}
+
+	// После завершения всех проверок публичных файлов — выводим итоговый отчёт
+	r.PrintFinalReport()
 }
 
-// probeURL отправляет HEAD-запрос. Если сервер возвращает 405 — повторяет через GET.
 func probeURL(url string) (int, error) {
 	req, err := http.NewRequest(http.MethodHead, url, nil)
 	if err != nil {

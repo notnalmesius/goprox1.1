@@ -6,13 +6,13 @@ import (
 	"sync"
 
 	publicfiles "prodjects/goprox/checks/publicFiles"
+	rep "prodjects/goprox/checks/report"
 	secheaders "prodjects/goprox/checks/secHeaders"
+	siteinfo "prodjects/goprox/checks/siteInfo"
 
 	"github.com/elazarl/goproxy"
 )
 
-// scannedHosts хранит хосты, для которых уже запущена проверка публичных файлов,
-// чтобы не сканировать один и тот же сайт при каждом запросе браузера.
 var (
 	scannedHosts = make(map[string]bool)
 	scannedMu    sync.Mutex
@@ -26,8 +26,6 @@ func main() {
 	proxy.OnRequest().DoFunc(
 		func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 
-			// Задача 2: сканирование публичных файлов — выполняется ДО любых блокировок,
-			// один раз на каждый уникальный хост.
 			host := r.URL.Scheme + "://" + r.URL.Host
 			scannedMu.Lock()
 			alreadyScanned := scannedHosts[host]
@@ -37,10 +35,20 @@ func main() {
 			scannedMu.Unlock()
 
 			if !alreadyScanned {
+				// Задача 1: сбор информации о сайте
+				info, err := siteinfo.Collect(host)
+				if err == nil {
+					report := rep.GetOrCreate(host)
+					report.SetInfo(info)
+					log.Print(siteinfo.FormatSiteInfo(info))
+				}
+
+				// Задача 2 итерации 5: поиск публичных файлов
+				// (внутри вызывает PrintFinalReport — Задачи 2 и 3 текущей итерации)
 				publicfiles.CheckPublicFiles(host)
 			}
 
-			// Задача 1 (существующая): блокируем не-HTTPS сайты — после сканирования
+			// Блокируем не-HTTPS после сканирования
 			if r.URL.Scheme != "https" {
 				resp := goproxy.NewResponse(r, goproxy.ContentTypeText, http.StatusForbidden,
 					"Resource doesn't use HTTPS")
@@ -50,9 +58,7 @@ func main() {
 			return r, nil
 		})
 
-	// TODO: Внести проверку на urlscan.io
-
-	// Задача 1: проверка HTTP-заголовков безопасности — на уровне ответа
+	// Задача 1 итерации 5: проверка HTTP-заголовков — на уровне ответа
 	proxy.OnResponse().DoFunc(
 		func(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
 			if secheaders.CheckCSP(resp, ctx) &&
@@ -71,7 +77,6 @@ func main() {
 				http.StatusForbidden,
 				"Connection refused: unsafe site",
 			)
-
 			return newResp
 		})
 

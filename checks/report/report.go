@@ -58,10 +58,16 @@ func GetOrCreate(host string) *SiteReport {
 	return r
 }
 
-// AddFinding добавляет аномалию в отчёт (потокобезопасно).
+// AddFinding добавляет аномалию в отчёт (потокобезопасно, без дублей).
 func (r *SiteReport) AddFinding(f Finding) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	// Проверяем — не добавляли ли уже такую аномалию
+	for _, existing := range r.Findings {
+		if existing.Detail == f.Detail && existing.Category == f.Category {
+			return // дубль, пропускаем
+		}
+	}
 	r.Findings = append(r.Findings, f)
 }
 

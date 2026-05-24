@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>goprox — Проверка безопасности сайта</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0f14;
+    --surface: #13161e;
+    --surface2: #1a1e28;
+    --border: #252a38;
+    --accent: #00e5ff;
+    --accent-dim: rgba(0,229,255,0.08);
+    --red: #ff4d6d;
+    --orange: #ff8c42;
+    --yellow: #ffd166;
+    --green: #06d6a0;
+    --text: #e2e8f0;
+    --text-dim: #64748b;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'IBM Plex Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  /* Сетка-фон */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrap {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 860px;
+    padding: 48px 24px 80px;
+  }
+
+  /* Шапка */
+  header {
+    margin-bottom: 48px;
+    text-align: center;
+  }
+
+  .logo {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .logo-dot {
+    width: 6px; height: 6px;
+    background: var(--accent);
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.7); }
+  }
+
+  h1 {
+    font-family: var(--sans);
+    font-size: clamp(28px, 5vw, 44px);
+    font-weight: 300;
+    letter-spacing: -1px;
+    line-height: 1.2;
+    margin-bottom: 12px;
+  }
+
+  h1 span { color: var(--accent); font-weight: 600; }
+
+  .subtitle {
+    color: var(--text-dim);
+    font-size: 15px;
+    font-weight: 300;
+  }
+
+  /* Форма */
+  .scan-form {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px;
+    margin-bottom: 32px;
+  }
+
+  .input-row {
+    display: flex;
+    gap: 12px;
+    align-items: stretch;
+  }
+
+  .url-input {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-family: var(--mono);
+    font-size: 14px;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .url-input::placeholder { color: var(--text-dim); }
+
+  .url-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(0,229,255,0.08);
+  }
+
+  .scan-btn {
+    background: var(--accent);
+    color: #000;
+    border: none;
+    border-radius: 8px;
+    padding: 14px 28px;
+    font-family: var(--sans);
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .scan-btn:hover:not(:disabled) {
+    background: #33ecff;
+    transform: translateY(-1px);
+    box-shadow: 0 8px 24px rgba(0,229,255,0.25);
+  }
+
+  .scan-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .hint {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+  }
+
+  /* Прогресс */
+  #progress {
+    display: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin-bottom: 32px;
+  }
+
+  .progress-label {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--accent);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .spinner {
+    width: 14px; height: 14px;
+    border: 2px solid rgba(0,229,255,0.2);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    flex-shrink: 0;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .progress-bar-track {
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .progress-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    width: 0%;
+    animation: fill 12s ease-out forwards;
+  }
+
+  @keyframes fill { to { width: 90%; } }
+
+  /* Результаты */
+  #result { display: none; }
+
+  /* Вердикт */
+  .verdict {
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin-bottom: 24px;
+    border: 1px solid;
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
+  }
+
+  .verdict.safe    { border-color: var(--green); background: rgba(6,214,160,0.06); }
+  .verdict.caution { border-color: var(--yellow); background: rgba(255,209,102,0.06); }
+  .verdict.danger  { border-color: var(--red); background: rgba(255,77,109,0.06); }
+
+  .verdict-icon { font-size: 36px; flex-shrink: 0; line-height: 1; }
+
+  .verdict-title {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+
+  .verdict.safe    .verdict-title { color: var(--green); }
+  .verdict.caution .verdict-title { color: var(--yellow); }
+  .verdict.danger  .verdict-title { color: var(--red); }
+
+  .verdict-text { font-size: 14px; color: var(--text-dim); line-height: 1.6; }
+
+  /* Счётчики */
+  .counters {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .counter {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+  }
+
+  .counter-num {
+    font-family: var(--mono);
+    font-size: 28px;
+    font-weight: 600;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+
+  .counter-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+  }
+
+  .counter.crit .counter-num { color: var(--red); }
+  .counter.high .counter-num { color: var(--orange); }
+  .counter.med  .counter-num { color: var(--yellow); }
+  .counter.low  .counter-num { color: var(--green); }
+
+  /* Блоки секций */
+  .section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+
+  .section-header {
+    padding: 16px 24px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .section-header:hover { background: #1f2436; }
+
+  .section-title {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--accent);
+    flex: 1;
+  }
+
+  .section-count {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  .chevron {
+    color: var(--text-dim);
+    transition: transform 0.2s;
+    font-size: 12px;
+  }
+
+  .section.collapsed .chevron { transform: rotate(-90deg); }
+  .section.collapsed .section-body { display: none; }
+
+  .section-body { padding: 20px 24px; }
+
+  /* Информация о сайте */
+  .info-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 8px 20px;
+    align-items: baseline;
+  }
+
+  .info-key {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+    white-space: nowrap;
+  }
+
+  .info-val {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text);
+    word-break: break-all;
+  }
+
+  /* Аномалии */
+  .finding {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 10px 14px;
+    align-items: start;
+  }
+
+  .finding:last-child { border-bottom: none; padding-bottom: 0; }
+
+  .sev-badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+    margin-top: 2px;
+  }
+
+  .sev-badge.КРИТИЧЕСКИЙ { background: rgba(255,77,109,0.15); color: var(--red); border: 1px solid rgba(255,77,109,0.3); }
+  .sev-badge.ВЫСОКИЙ { background: rgba(255,140,66,0.15); color: var(--orange); border: 1px solid rgba(255,140,66,0.3); }
+  .sev-badge.СРЕДНИЙ { background: rgba(255,209,102,0.15); color: var(--yellow); border: 1px solid rgba(255,209,102,0.3); }
+  .sev-badge.НИЗКИЙ { background: rgba(6,214,160,0.1); color: var(--green); border: 1px solid rgba(6,214,160,0.25); }
+
+  .finding-content {}
+  .finding-issue { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+  .finding-detail { font-family: var(--mono); font-size: 12px; color: var(--accent); margin-bottom: 6px; }
+  .finding-rec { font-size: 13px; color: var(--text-dim); line-height: 1.5; }
+
+  /* Категория */
+  .cat-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin: 16px 0 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .cat-label:first-child { margin-top: 0; }
+
+  /* Рекомендации */
+  .rec-item {
+    display: flex;
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+    align-items: flex-start;
+  }
+
+  .rec-item:last-child { border-bottom: none; padding-bottom: 0; }
+  .rec-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+  .rec-text { font-size: 14px; line-height: 1.6; color: var(--text-dim); }
+
+  /* Ошибка */
+  .error-box {
+    background: rgba(255,77,109,0.08);
+    border: 1px solid rgba(255,77,109,0.3);
+    border-radius: 10px;
+    padding: 20px 24px;
+    color: var(--red);
+    font-family: var(--mono);
+    font-size: 13px;
+    display: none;
+    margin-bottom: 24px;
+  }
+
+  @media (max-width: 600px) {
+    .input-row { flex-direction: column; }
+    .counters { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="logo">
+      <div class="logo-dot"></div>
+      goprox security scanner
+    </div>
+    <h1>Проверка <span>безопасности</span> сайта</h1>
+    <p class="subtitle">Анализ заголовков, публичных файлов и конфигурации веб-сервера</p>
+  </header>
+
+  <div class="scan-form">
+    <div class="input-row">
+      <input class="url-input" id="urlInput" type="text"
+        placeholder="https://example.com"
+        autocomplete="off" spellcheck="false">
+      <button class="scan-btn" id="scanBtn" onclick="startScan()">
+        <span id="btnText">Проверить</span>
+      </button>
+    </div>
+    <div class="hint">// Введите адрес сайта и нажмите «Проверить»</div>
+  </div>
+
+  <div class="error-box" id="errorBox"></div>
+
+  <div id="progress">
+    <div class="progress-label">
+      <div class="spinner"></div>
+      <span id="progressText">Выполняется сканирование...</span>
+    </div>
+    <div class="progress-bar-track">
+      <div class="progress-bar-fill" id="progressFill"></div>
+    </div>
+  </div>
+
+  <div id="result"></div>
+
+</div>
+
+<script>
+const steps = [
+  'Сбор информации о веб-сервере...',
+  'Проверка HTTP-заголовков безопасности...',
+  'Поиск общедоступных файлов (27 путей)...',
+  'Формирование отчёта...'
+];
+
+let stepInterval;
+
+function startScan() {
+  const url = document.getElementById('urlInput').value.trim();
+  if (!url) {
+    showError('Введите адрес сайта.');
+    return;
+  }
+
+  // Сброс UI
+  hideError();
+  document.getElementById('result').style.display = 'none';
+  document.getElementById('result').innerHTML = '';
+
+  // Прогресс
+  const progress = document.getElementById('progress');
+  progress.style.display = 'block';
+
+  // Пересоздаём fill для перезапуска анимации
+  const track = document.querySelector('.progress-bar-track');
+  track.innerHTML = '<div class="progress-bar-fill" id="progressFill"></div>';
+
+  const btn = document.getElementById('scanBtn');
+  btn.disabled = true;
+  document.getElementById('btnText').textContent = 'Сканирую...';
+
+  let step = 0;
+  document.getElementById('progressText').textContent = steps[0];
+  stepInterval = setInterval(() => {
+    step = (step + 1) % steps.length;
+    document.getElementById('progressText').textContent = steps[step];
+  }, 3000);
+
+  fetch('/scan', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({url})
+  })
+  .then(r => {
+    if (!r.ok) return r.text().then(t => { throw new Error(t); });
+    return r.json();
+  })
+  .then(data => {
+    clearInterval(stepInterval);
+    progress.style.display = 'none';
+    btn.disabled = false;
+    document.getElementById('btnText').textContent = 'Проверить';
+    renderResult(data);
+  })
+  .catch(err => {
+    clearInterval(stepInterval);
+    progress.style.display = 'none';
+    btn.disabled = false;
+    document.getElementById('btnText').textContent = 'Проверить';
+    showError('Ошибка сканирования: ' + err.message);
+  });
+}
+
+function renderResult(d) {
+  const el = document.getElementById('result');
+  el.style.display = 'block';
+
+  const verdictClass = d.safe_to_visit === 'yes' ? 'safe' : d.safe_to_visit === 'caution' ? 'caution' : 'danger';
+  const verdictIcon = d.safe_to_visit === 'yes' ? '✅' : d.safe_to_visit === 'caution' ? '⚠️' : '🚫';
+  const verdictTitle = d.safe_to_visit === 'yes' ? 'Сайт безопасен' : d.safe_to_visit === 'caution' ? 'Требует осторожности' : 'Посещение не рекомендуется';
+
+  // Группируем аномалии по категориям
+  const cats = {};
+  (d.findings || []).forEach(f => {
+    if (!cats[f.category]) cats[f.category] = [];
+    cats[f.category].push(f);
+  });
+
+  const findingsHTML = Object.keys(cats).length === 0
+    ? '<p style="color:var(--text-dim);font-size:14px;">Аномалий не обнаружено.</p>'
+    : Object.entries(cats).map(([cat, items]) => `
+        <div class="cat-label">${cat}</div>
+        ${items.map(f => `
+          <div class="finding">
+            <span class="sev-badge ${f.severity}">${f.severity}</span>
+            <div class="finding-content">
+              <div class="finding-issue">${f.issue}</div>
+              ${f.detail ? `<div class="finding-detail">${f.detail}</div>` : ''}
+            </div>
+          </div>`).join('')}
+      `).join('');
+
+  // Рекомендации — уникальные, по убыванию серьёзности
+  const sevOrder = ['КРИТИЧЕСКИЙ','ВЫСОКИЙ','СРЕДНИЙ','НИЗКИЙ'];
+  const seen = new Set();
+  const recs = (d.findings || [])
+    .slice().sort((a,b) => sevOrder.indexOf(a.severity) - sevOrder.indexOf(b.severity))
+    .filter(f => { if (seen.has(f.recommend)) return false; seen.add(f.recommend); return true; });
+
+  const recIcon = sev => sev === 'КРИТИЧЕСКИЙ' ? '🔴' : sev === 'ВЫСОКИЙ' ? '🟠' : sev === 'СРЕДНИЙ' ? '🟡' : '🟢';
+
+  const recsHTML = recs.length === 0
+    ? '<p style="color:var(--text-dim);font-size:14px;">✓ Специфических рекомендаций нет — сайт настроен корректно.</p>'
+    : recs.map(f => `
+        <div class="rec-item">
+          <span class="rec-icon">${recIcon(f.severity)}</span>
+          <span class="rec-text">${f.recommend}</span>
+        </div>`).join('');
+
+  el.innerHTML = `
+    <div class="verdict ${verdictClass}">
+      <div class="verdict-icon">${verdictIcon}</div>
+      <div>
+        <div class="verdict-title">${verdictTitle}</div>
+        <div class="verdict-text">${d.general_advice}</div>
+      </div>
+    </div>
+
+    <div class="counters">
+      <div class="counter crit">
+        <div class="counter-num">${d.count_critical}</div>
+        <div class="counter-label">Критических</div>
+      </div>
+      <div class="counter high">
+        <div class="counter-num">${d.count_high}</div>
+        <div class="counter-label">Высоких</div>
+      </div>
+      <div class="counter med">
+        <div class="counter-num">${d.count_medium}</div>
+        <div class="counter-label">Средних</div>
+      </div>
+      <div class="counter low">
+        <div class="counter-num">${d.count_low}</div>
+        <div class="counter-label">Низких</div>
+      </div>
+    </div>
+
+    <div class="section" id="s-info">
+      <div class="section-header" onclick="toggleSection('s-info')">
+        <span class="section-title">// 01 — Информация о сайте</span>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="section-body">
+        <div class="info-grid">
+          <span class="info-key">URL</span>
+          <span class="info-val">${d.url}</span>
+          <span class="info-key">Веб-сервер</span>
+          <span class="info-val">${d.server || 'не определён'}</span>
+          <span class="info-key">Язык/фреймворк</span>
+          <span class="info-val">${d.detected_lang || 'не определён'}</span>
+          ${d.powered_by ? `<span class="info-key">X-Powered-By</span><span class="info-val">${d.powered_by}</span>` : ''}
+          <span class="info-key">Content-Type</span>
+          <span class="info-val">${d.content_type || 'не указан'}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section" id="s-findings">
+      <div class="section-header" onclick="toggleSection('s-findings')">
+        <span class="section-title">// 02 — Найденные аномалии</span>
+        <span class="section-count">${(d.findings||[]).length} шт.</span>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="section-body">${findingsHTML}</div>
+    </div>
+
+    <div class="section" id="s-recs">
+      <div class="section-header" onclick="toggleSection('s-recs')">
+        <span class="section-title">// 03 — Рекомендации</span>
+        <span class="section-count">${recs.length} шт.</span>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="section-body">${recsHTML}</div>
+    </div>
+  `;
+}
+
+function toggleSection(id) {
+  document.getElementById(id).classList.toggle('collapsed');
+}
+
+function showError(msg) {
+  const el = document.getElementById('errorBox');
+  el.textContent = '// ERROR: ' + msg;
+  el.style.display = 'block';
+}
+
+function hideError() {
+  document.getElementById('errorBox').style.display = 'none';
+}
+
+// Enter для запуска
+document.getElementById('urlInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') startScan();
+});
+</script>
+</body>
+</html>
